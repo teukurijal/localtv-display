@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { ConfigStore, InputError, validateDevice } from './config.js';
 import { BrowserManager } from './browser-manager.js';
+import { CastManager } from './cast-manager.js';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const localHosts = new Set(['localhost', '127.0.0.1', '[::1]']);
@@ -64,6 +65,7 @@ export async function createApplication(options = {}) {
   const store = options.store || new ConfigStore(directory);
   await store.load();
   const manager = options.manager || new BrowserManager(store, options.browser);
+  const caster = options.caster || new CastManager(store, manager, () => `http://127.0.0.1:${server.address().port}`, options.cast);
   const token = randomBytes(32).toString('hex');
   const receivers = new Map(['1', '2', '3'].map(id => [id, { lastSeen: null, revision: 0 }]));
   let queue = Promise.resolve();
@@ -88,7 +90,8 @@ export async function createApplication(options = {}) {
     response.setHeader('X-Frame-Options', 'DENY');
     response.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:; connect-src 'self'; frame-ancestors 'none'; form-action 'self'; base-uri 'none'; object-src 'none'");
     try {
-      const pathname = new URL(request.url, 'http://localhost').pathname;
+      const requestedUrl = new URL(request.url, 'http://localhost');
+      const pathname = requestedUrl.pathname;
       const method = request.method;
       if (method === 'GET' && pathname === '/health') return send(response, 200, { ok: true });
       if (method === 'GET' && assets.has(pathname)) {
@@ -97,6 +100,7 @@ export async function createApplication(options = {}) {
         return send(response, 200, await readFile(path.join(root, 'public', file)), `${type}; charset=utf-8`);
       }
       if (method === 'GET' && /^\/tv\/[123]\/?$/.test(pathname)) {
+        if (requestedUrl.searchParams.get('cast') === '1') requireLocal(request);
         return send(response, 200, await readFile(path.join(root, 'public', 'receiver.html')), 'text/html; charset=utf-8');
       }
       const tvRoute = pathname.match(/^\/api\/tv\/([123])\/(status|frame\.jpg)$/);
@@ -104,7 +108,9 @@ export async function createApplication(options = {}) {
         const [, id, action] = tvRoute;
         if (action === 'status') {
           const receiver = receivers.get(id);
-          receiver.lastSeen = Date.now();
+          // A local Cast sender is not evidence that a physical TV is connected.
+          if (requestedUrl.searchParams.get('source') === 'cast') requireLocal(request);
+          else receiver.lastSeen = Date.now();
           const state = manager.snapshot(id);
           return send(response, 200, { name: store.device(id).name, state: state.state, available: state.frameAvailable, revision: receiver.revision, interval: Math.round(1000 / store.value.fps) });
         }
@@ -148,7 +154,7 @@ export async function createApplication(options = {}) {
           return send(response, 200, {
             config: store.value, browser: { running: Boolean(manager.context), error: manager.lastError }, addresses,
             stats: { uptimeSeconds: Math.floor(process.uptime()), serverMemoryMB: Math.round(process.memoryUsage().rss / 1024 / 1024) },
-            devices: store.value.devices.map(device => ({ id: device.id, ...manager.snapshot(device.id), ...receivers.get(device.id), connected: Date.now() - (receivers.get(device.id).lastSeen || 0) < 12000 })),
+            devices: store.value.devices.map(device => ({ id: device.id, ...manager.snapshot(device.id), ...receivers.get(device.id), connected: Date.now() - (receivers.get(device.id).lastSeen || 0) < 12000, cast: caster.snapshot(device.id) })),
           });
         }
         const preview = pathname.match(/^\/api\/admin\/devices\/([123])\/preview\.jpg$/);
@@ -158,7 +164,7 @@ export async function createApplication(options = {}) {
         }
         if (method !== 'POST') throw new InputError('Route not found.', 404);
         const body = await jsonBody(request);
-        await mutate(async () => {
+        const result = await mutate(async () => {
           if (pathname === '/api/admin/settings') {
             await store.save({ ...store.value, ...store.settings(body) });
           } else if (pathname === '/api/admin/browser/login') {
@@ -167,13 +173,24 @@ export async function createApplication(options = {}) {
             if (store.value.devices.some(device => device.url)) throw new InputError('Demo setup is available only while all three display URLs are empty.', 409);
             const origin = `http://127.0.0.1:${server.address().port}`;
             await store.save({ ...store.value, loginUrl: `${origin}/demo/login`, devices: store.value.devices.map(device => ({ ...device, url: `${origin}/demo/queue/${device.id}`, readySelector: '[data-queue-ready]' })) });
+          } else if (/^\/api\/admin\/cast\/(discover|start|stop)$/.test(pathname)) {
+            return { results: await caster.all(pathname.split('/').at(-1)) };
           } else {
-            const deviceRoute = pathname.match(/^\/api\/admin\/devices\/([123])\/(configure|start|stop|refresh|approve|reconnect)$/);
+            const deviceRoute = pathname.match(/^\/api\/admin\/devices\/([123])\/(configure|start|stop|refresh|approve|reconnect|cast-discover|cast-assign|cast-start|cast-stop)$/);
             if (!deviceRoute) throw new InputError('Route not found.', 404);
             const [, id, action] = deviceRoute;
-            if (action === 'configure') {
+            if (action === 'cast-discover') {
+              await caster.discover(id);
+            } else if (action === 'cast-assign') {
+              if (typeof body.sinkId !== 'string') throw new InputError('Choose a TV or clear the assignment.');
+              await caster.assign(id, body.sinkId);
+            } else if (action === 'cast-start') {
+              await caster.start(id);
+            } else if (action === 'cast-stop') {
+              await caster.stop(id);
+            } else if (action === 'configure') {
               const current = store.device(id);
-              const next = validateDevice(body, id, current.enabled);
+              const next = validateDevice({ ...body, castSink: current.castSink }, id, current.enabled);
               if (current.enabled && !next.url) throw new InputError('Stop the display before clearing its URL.');
               await manager.stop(id);
               await store.updateDevice(id, next);
@@ -194,7 +211,7 @@ export async function createApplication(options = {}) {
             }
           }
         });
-        return send(response, 200, { ok: true });
+        return send(response, 200, { ok: true, ...result });
       }
       throw new InputError('Route not found.', 404);
     } catch (error) {
@@ -205,7 +222,7 @@ export async function createApplication(options = {}) {
   server.requestTimeout = 45000;
   server.headersTimeout = 10000;
   return {
-    server, store, manager,
+    server, store, manager, caster,
     async listen(port = 8443, host = '0.0.0.0') {
       await new Promise((resolve, reject) => { server.once('error', reject); server.listen(port, host, resolve); });
       return server.address();
@@ -214,6 +231,7 @@ export async function createApplication(options = {}) {
       server.closeIdleConnections();
       const closed = new Promise(resolve => server.close(resolve));
       await queue;
+      await caster.close();
       await manager.close();
       server.closeAllConnections();
       await closed;

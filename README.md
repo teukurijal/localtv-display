@@ -1,8 +1,10 @@
 # Local Queue TV Manager
 
-Run three independent outpatient queue displays from one Windows PC. Sign in to the queue website in a dedicated Chromium window; each AQUA TV opens a local receiver URL and receives its own captured page.
+Run three independent outpatient queue displays from one Windows PC. Sign in to the queue website in a dedicated Chromium window, then assign and cast each approved queue page to a different Google Cast TV. TVs without Google Cast can use the browser receiver URLs.
 
 This is a working LAN prototype. The real queue-site session policy, AQUA Browser-App compatibility, Windows startup/firewall behavior, and a full clinic-day soak test still need to be checked on the target equipment.
+
+The Cast controls are experimental until tested on your three physical TVs. Automated tests validate independent sender processes, target assignment, PC controls, and the real Chrome Cast discovery protocol; they do not establish that your AQUA model supports casting or that three wireless streams remain stable throughout a clinic day.
 
 ## Windows quick start
 
@@ -22,6 +24,31 @@ npm start
 
 The default listener is `0.0.0.0:8443`. The admin interface and control API require a loopback connection, a matching loopback Host, and a per-process admin token. A TV or another LAN device cannot use the admin API. Other users/processes with access to this Windows session can administer it; use a dedicated Windows account if needed.
 
+## Control three Cast TVs from one PC
+
+Install **Google Chrome** on the Windows PC. Each TV must support **Google Cast / Chromecast**, and all devices must be on the same LAN. Miracast-only receivers do not work with this integration. Verify that all TVs appear in Chrome’s normal Cast menu and give each a unique name in its settings.
+
+1. Sign in to the queue website on the PC, configure the three poli URLs, and start each display.
+2. Confirm each preview and approve it, or configure a valid protected-page ready selector. Casting is blocked until that display has an approved frame.
+3. Click **Discover TVs** in Queue TV Manager. It opens three dedicated Chrome sender windows. The destination lists show **Searching for TVs…** while waiting for results. After 10 seconds with no results, they show **No Google Cast TVs found** with recovery steps; any TVs found later still appear automatically.
+4. Under each display’s **Cast destination**, select a different TV. Assignments are saved. Duplicate destinations and ambiguous duplicate TV names are rejected.
+5. Click **Cast all three**, or **Cast to TV** on an individual card. The app requests tab mirroring to each selected TV; you do not type a receiver URL on the TV.
+6. Check the three physical screens. Each should show its own poli. Use **Stop cast** for one TV or **Stop all casts** for all three. Refreshing or stopping a queue does not change the other queues.
+
+The sender windows render only local approved receiver frames. They do not contain your queue-site login or website cookies. The authenticated pages still share one Chromium profile. Each sender uses a separate Chrome process/profile, so it has its own Cast session and content. Keep these windows open and leave their receiver tabs unchanged while casting.
+
+**Start display / Stop** controls queue capture. Stopping capture shows a paused screen on any active cast. **Cast to TV / Stop cast** controls the connection to the physical TV. Stopping one cast does not stop capture or other TV sessions.
+
+“Cast requested” means a command was sent. “Cast session active” appears only after Chrome reports an active session for that destination; check the physical TV to confirm readability and the correct content. Discovery or a local sender tab alone never counts as a connected TV. Failed destinations are reported individually; successful casts remain running.
+
+After restarting the service or closing a sender window, use **Discover TVs** and **Cast all three** again; assignments remain saved. For a lost Cast connection, select **Cast to TV** to retry. Automatic relaunch of physical-TV casting after a restart is not implemented. The browser URL receivers retain their existing automatic reconnection behavior.
+
+Run this on the actual Windows PC. WSL, containers, VLAN boundaries, VPNs, guest Wi-Fi, and AP isolation can prevent Cast discovery even when the normal HTTP receiver works. A remote VPS cannot discover your clinic’s TVs by itself.
+
+If **Cast destination** stays empty, open Chrome’s **Cast** menu in each sender window opened by this app, and allow local network access if prompted. Chrome can defer network discovery until its Cast controls are opened. A TV appearing in your regular Chrome profile does not establish that these separate sender processes can discover it. Check Google Cast support and the shared LAN, then click **Discover TVs** again. If the error mentions WSL, run the Windows setup/start scripts from a Windows copy of the project using Windows Node.js and Google Chrome. Installing Playwright Chromium for queue capture does not install the Google Chrome used by the Cast sender.
+
+The implementation uses the experimental [Chrome DevTools Cast domain](https://chromedevtools.github.io/devtools-protocol/tot/Cast/). Its browser-launch arguments intentionally keep MediaRouter enabled; Playwright’s standard launch arguments disable that feature. The Chrome sandbox is retained and control uses a local pipe, with no debugging TCP port exposed. `QUEUE_CAST_EXECUTABLE` can point to a compatible Chrome executable if Chrome is installed outside its standard location.
+
 ## Try the complete demo
 
 The built-in demo has three different queue pages and one shared login. It uses no credentials or patient data.
@@ -30,7 +57,7 @@ The built-in demo has three different queue pages and one shared login. It uses 
 2. Click **Open login browser**.
 3. In the separate Chromium window, click **Sign in to demo**.
 4. Click **Start display** on each TV card.
-5. Open `http://PC-LAN-IP:8443/tv/1`, `/tv/2`, and `/tv/3` on the TVs.
+5. Click **Discover TVs**, assign three different destinations, and click **Cast all three**. Alternatively, open `http://PC-LAN-IP:8443/tv/1`, `/tv/2`, and `/tv/3` in TV browsers.
 
 The demo has a protected-page marker, so it approves only authenticated queue pages automatically. The live clock makes it easy to check whether frames are updating. To switch to the real site, save the real login URL and replace each display URL and ready selector.
 
@@ -110,6 +137,7 @@ Optional environment settings:
 | `PORT` | `8443` | HTTP server and receiver port |
 | `HOST` | `0.0.0.0` | Listener address; use `127.0.0.1` for PC-only development |
 | `QUEUE_DATA_DIR` | Platform-specific folder above | Configuration and dedicated Chromium profile |
+| `QUEUE_CAST_EXECUTABLE` | Installed Google Chrome | Optional executable path for Cast sender browsers |
 
 Changing the port or PC IP also changes the TV receiver addresses. The built-in demo URLs must be updated if the port changes.
 
@@ -129,9 +157,12 @@ Playwright references: [persistent browser context](https://playwright.dev/docs/
 npm run check
 npm test
 npm run test:browser
+npm run test:cast
 ```
 
 The browser integration test uses temporary data and headless Chromium. It exercises a single shared login, three different streams, LAN admin isolation, selector/manual approval, per-TV refresh/stop, receiver reconnection, service restart with persistent authentication, browser recovery, and desktop/mobile admin layouts. Demo screenshots are written to ignored `test-results/`. It never uses a real account.
+
+Cast control tests use simulated TV responses to verify three different destinations, duplicate prevention, independent stop, partial failures, approval checks, and honest connection status. `test:cast` separately launches three real Chrome for Testing processes and exercises the actual Cast discovery protocol. Neither suite casts content to a physical TV.
 
 ## Before clinic deployment
 
@@ -155,3 +186,7 @@ The browser integration test uses temporary data and headless Chromium. It exerc
 | Multiple poli tabs log each other out | Confirm the website permits shared-account concurrent pages before adding streaming workarounds. |
 | Queue calls have no sound | Image-frame streaming is video-only; this version does not carry browser audio. |
 | Port already in use | Stop the other instance or choose a different `PORT` and update receiver URLs/firewall. |
+| Discover TVs cannot open Chrome | Install Google Chrome on the Windows PC, or set `QUEUE_CAST_EXECUTABLE`. A desktop session must be available. |
+| No Cast TVs found | Check Chrome’s own Cast menu, unique TV names, Google Cast support, same LAN, local network permissions, Windows Firewall, and AP isolation. Run on Windows rather than inside WSL. |
+| A Cast command succeeds but the TV stays blank | Check the physical TV and status message. Test that TV with Chrome’s normal Cast menu; command acknowledgement alone is not a confirmed session. |
+| One cast fails while others work | Leave the working casts running. Check the failed TV, then retry its individual Cast control. |

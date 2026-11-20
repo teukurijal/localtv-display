@@ -3,6 +3,8 @@
   'use strict';
   var match = window.location.pathname.match(/\/tv\/([123])/);
   var id = match ? match[1] : '1';
+  var castSender = /(?:\?|&)cast=1(?:&|$)/.test(window.location.search);
+  if (castSender) document.getElementById('fullscreen').hidden = true;
   var display = document.getElementById('display');
   var offline = document.getElementById('offline');
   var heading = document.getElementById('status-heading');
@@ -50,7 +52,7 @@
   function poll() {
     var request = new XMLHttpRequest();
     var done = false;
-    request.open('GET', '/api/tv/' + id + '/status?t=' + Date.now(), true);
+    request.open('GET', '/api/tv/' + id + '/status?t=' + Date.now() + (castSender ? '&source=cast' : ''), true);
     request.timeout = 5000;
     function fail() { if (!done) { done = true; retry(); } }
     request.onerror = fail;

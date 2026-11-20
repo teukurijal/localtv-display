@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
 import { createApplication, isLocalAdmin } from '../src/server.js';
+import { fakeCastDriver } from './cast-fixture.js';
 
 test('admin access requires a loopback socket, loopback Host and same origin', () => {
   const request = (address, host, more = {}) => ({ socket: { remoteAddress: address, localPort: 8443 }, headers: { host, ...more } });
@@ -19,7 +20,8 @@ test('admin access requires a loopback socket, loopback Host and same origin', (
 
 test('HTTP endpoints isolate receiver data and reject unauthorized controls', async t => {
   const directory = await mkdtemp(path.join(os.tmpdir(), 'queue-http-'));
-  const app = await createApplication({ dataDirectory: directory, browser: { headless: true } });
+  const driver = fakeCastDriver();
+  const app = await createApplication({ dataDirectory: directory, browser: { headless: true }, cast: { launch: driver.launch } });
   t.after(async () => { await app.close(); await rm(directory, { recursive: true, force: true }); });
   const { port } = await app.listen(0, '127.0.0.1');
   const base = `http://127.0.0.1:${port}`;
@@ -35,11 +37,21 @@ test('HTTP endpoints isolate receiver data and reject unauthorized controls', as
   assert.equal((await post('/api/admin/demo', {}, { Origin: 'http://attacker.test' })).status, 403);
   assert.equal((await post('/api/admin/demo', {}, { 'X-Admin-Token': 'wrong' })).status, 401);
   assert.equal((await request('/api/admin/devices/1/preview.jpg')).status, 401);
+  assert.equal((await post('/api/admin/cast/discover', {}, { 'X-Admin-Token': 'wrong' })).status, 401);
+  assert.equal(driver.launches.length, 0);
   assert.equal((await request('/api/tv/1/frame.jpg')).status, 503);
   assert.equal((await request('/tv/4')).status, 404);
   assert.equal((await post('/api/admin/devices/1/start', {})).status, 400);
   assert.equal((await post('/api/admin/demo', {})).status, 200);
   assert.equal((await post('/api/admin/demo', {})).status, 409);
+  assert.equal((await post('/api/admin/cast/discover', {})).status, 200);
+  assert.equal((await post('/api/admin/devices/1/cast-assign', { sinkId: 'aqua-1' })).status, 200);
+  assert.equal((await post('/api/admin/devices/2/cast-assign', { sinkId: 'aqua-1' })).status, 409);
+  await request('/api/tv/1/status?source=cast');
+  const preReceiver = await (await request('/api/admin/state', { headers: { 'X-Admin-Token': session.token } })).json();
+  assert.equal(preReceiver.devices[0].connected, false, 'local sender cannot count as a connected TV');
+  assert.equal(preReceiver.devices[0].cast.state, 'ready');
+  assert.equal((await post('/api/admin/devices/1/cast-start', {})).status, 409, 'unapproved page cannot cast');
   const receiver = await (await request('/api/tv/1/status')).json();
   assert.deepEqual(Object.keys(receiver).sort(), ['available', 'interval', 'name', 'revision', 'state']);
   assert.equal((await post('/api/admin/devices/1/reconnect', {})).status, 200);

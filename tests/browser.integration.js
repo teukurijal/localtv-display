@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { chromium } from 'playwright';
 import { createApplication } from '../src/server.js';
+import { fakeCastDriver } from './cast-fixture.js';
 
 async function until(predicate, description, timeout = 20000) {
   const deadline = Date.now() + timeout;
@@ -17,7 +18,8 @@ async function until(predicate, description, timeout = 20000) {
 
 test('one persistent login drives three isolated receivers and recovers safely', { timeout: 180000 }, async t => {
   const dataDirectory = await mkdtemp(path.join(os.tmpdir(), 'queue-browser-'));
-  let app = await createApplication({ dataDirectory, browser: { headless: true } });
+  const castDriver = fakeCastDriver();
+  let app = await createApplication({ dataDirectory, browser: { headless: true }, cast: { launch: castDriver.launch } });
   const browser = await chromium.launch({ headless: true });
   t.after(async () => { await browser.close(); await app.close(); await rm(dataDirectory, { recursive: true, force: true }); });
   const address = await app.listen(0, '0.0.0.0');
@@ -67,6 +69,22 @@ test('one persistent login drives three isolated receivers and recovers safely',
     assert.equal(response.headers.get('content-type'), 'image/jpeg');
     assert.equal(image.readUInt16BE(0), 0xffd8);
   }
+  // Exercise PC Cast controls with simulated receivers. Actual TV hardware is a separate test.
+  await ui.locator('#discover-tvs').click();
+  await until(() => castDriver.launches.length === 3, 'three separate Cast senders');
+  for (const id of ['1', '2', '3']) {
+    await until(async () => await ui.locator(`[data-id="${id}"] .cast-destination option`).count() === 4, 'discovered TV choices');
+    await ui.locator(`[data-id="${id}"] .cast-destination`).selectOption(`aqua-${id}`);
+    await until(() => app.store.device(id).castSink?.id === `aqua-${id}`, 'TV assignment saved');
+  }
+  await ui.locator('#cast-all').click();
+  await until(() => ['1', '2', '3'].every(id => app.caster.snapshot(id).state === 'casting'), 'three simulated casts active');
+  await ui.locator('[data-id="1"] [data-action="cast-stop"]').click();
+  await until(() => app.caster.snapshot('1').state === 'idle', 'individual Cast stop');
+  assert.equal(app.caster.snapshot('2').state, 'casting');
+  assert.equal(app.caster.snapshot('3').state, 'casting');
+  await ui.locator('#stop-casts').click();
+  await until(() => ['1', '2', '3'].every(id => app.caster.snapshot(id).state === 'idle'), 'all casts stopped');
   const receiverContext = await browser.newContext();
   const receivers = await Promise.all(['1', '2', '3'].map(async id => {
     const receiver = await receiverContext.newPage();

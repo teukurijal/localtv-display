@@ -15,7 +15,7 @@ export function defaults() {
   return {
     version: 1, loginUrl: '', fps: 1, quality: 80,
     devices: ['Poli Umum', 'Poli Anak', 'Poli Gigi'].map((name, i) => ({
-      id: String(i + 1), name, url: '', readySelector: '', resolution: '1080p', refreshSeconds: 0, enabled: false,
+      id: String(i + 1), name, url: '', readySelector: '', resolution: '1080p', refreshSeconds: 0, enabled: false, castSink: null,
     })),
   };
 }
@@ -46,9 +46,14 @@ export function validateDevice(value, id, enabled = false) {
   const refreshSeconds = numberIn(value.refreshSeconds, 0, 86400, 'Refresh interval');
   if (refreshSeconds > 0 && refreshSeconds < 30) throw new InputError('Automatic refresh must be at least 30 seconds.');
   if (refreshSeconds && !value.readySelector.trim()) throw new InputError('Set a protected-page ready selector before enabling automatic refresh.');
+  const castSink = value.castSink ?? null;
+  if (castSink !== null && (typeof castSink !== 'object' || typeof castSink.id !== 'string' || !castSink.id || castSink.id.length > 512 || typeof castSink.name !== 'string' || !castSink.name || castSink.name.length > 200)) {
+    throw new InputError('Choose a valid discovered Cast TV.');
+  }
   return {
     id, name: value.name.trim(), url: httpUrl(value.url),
     readySelector: value.readySelector.trim(), resolution: value.resolution, refreshSeconds, enabled,
+    castSink: castSink ? { id: castSink.id, name: castSink.name } : null,
   };
 }
 
