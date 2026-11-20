@@ -105,6 +105,8 @@ The directory contains `config.json` and `chromium-profile/`. URLs, display sett
 
 Optional environment settings:
 
+To use a different port for development, run `yarn dev --port 3200` (or `npm run dev -- --port 3200`). The `--port` option also works with `start` and takes precedence over `PORT`.
+
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `PORT` | `8443` | HTTP server and receiver port |

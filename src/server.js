@@ -4,6 +4,7 @@ import path from 'node:path';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
+import { parseArgs } from 'node:util';
 import { ConfigStore, InputError, validateDevice } from './config.js';
 import { BrowserManager } from './browser-manager.js';
 
@@ -224,8 +225,10 @@ export async function createApplication(options = {}) {
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   let app;
   try {
-    const port = Number(process.env.PORT || 8443);
-    if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('PORT must be between 1 and 65535.');
+    const { values } = parseArgs({ options: { port: { type: 'string' } } });
+    const portValue = values.port ?? process.env.PORT ?? '8443';
+    const port = Number(portValue);
+    if (!/^\d+$/.test(portValue) || !Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Port must be an integer between 1 and 65535.');
     app = await createApplication();
     await app.listen(port, process.env.HOST || '0.0.0.0');
     console.log(`Queue TV Manager\nAdmin on this PC: http://localhost:${port}\nTV receivers: http://<PC-LAN-IP>:${port}/tv/1 (also /tv/2 and /tv/3)`);
