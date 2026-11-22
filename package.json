@@ -15,7 +15,8 @@
     "test:browser": "node --test tests/browser.integration.js",
     "install:browser": "playwright install chromium",
     "test:video": "node --test tests/video.integration.js",
-    "test:direct": "node --test tests/direct.integration.js tests/gateway.integration.js"
+    "test:direct": "node --test tests/direct.integration.js tests/gateway.integration.js",
+    "test:pwa": "node --test tests/pwa.integration.js"
   },
   "dependencies": {
     "playwright": "1.65.1",

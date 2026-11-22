@@ -15,6 +15,9 @@ const localHosts = new Set(['localhost', '127.0.0.1', '[::1]']);
 const assets = new Map([
   ['/assets/admin.js', ['admin.js', 'text/javascript']],
   ['/assets/style.css', ['style.css', 'text/css']],
+  ['/assets/app-icon.svg', ['app-icon.svg', 'image/svg+xml']],
+  ['/assets/app-icon-192.png', ['app-icon-192.png', 'image/png']],
+  ['/assets/app-icon-512.png', ['app-icon-512.png', 'image/png']],
   ['/assets/video-receiver.js', ['video-receiver.js', 'text/javascript']],
   ['/assets/receiver.js', ['receiver.js', 'text/javascript']],
   ['/assets/receiver.css', ['receiver.css', 'text/css']],
@@ -58,7 +61,8 @@ function send(response, status, body, type = 'application/json; charset=utf-8') 
 
 function demoPage(id) {
   const names = ['Poli Umum', 'Poli Anak', 'Poli Gigi'];
-  return `<!doctype html><html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${names[Number(id) - 1]} · Demo</title><link rel="stylesheet" href="/assets/style.css"></head><body class="demo-board" data-queue-ready data-demo-id="${id}"><header><span>QUEUE TV / DEMO</span><span id="clock"></span></header><main><p>SELAMAT DATANG</p><h1>${names[Number(id) - 1]}</h1><div class="queue-number" id="queue-number">${['A', 'B', 'C'][Number(id) - 1]}-00${id}</div><h2>Silakan menuju ruang pemeriksaan</h2><p>This is a demo display. No patient information.</p></main><footer>TV ${id} · Live demo clock · One shared browser session</footer><script src="/assets/demo.js"></script></body></html>`;
+  names[Number(id) - 1] ||= `Queue ${id}`;
+  return `<!doctype html><html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${names[Number(id) - 1]} · Demo</title><link rel="stylesheet" href="/assets/style.css"></head><body class="demo-board" data-queue-ready data-demo-id="${id}"><header><span>QUEUE TV / DEMO</span><span id="clock"></span></header><main><p>SELAMAT DATANG</p><h1>${names[Number(id) - 1]}</h1><div class="queue-number" id="queue-number">${['A', 'B', 'C'][Number(id) - 1] || 'Q'}-00${id}</div><h2>Silakan menuju ruang pemeriksaan</h2><p>This is a demo display. No patient information.</p></main><footer>TV ${id} · Live demo clock · One shared browser session</footer><script src="/assets/demo.js"></script></body></html>`;
 }
 
 export async function createApplication(options = {}) {
@@ -70,7 +74,7 @@ export async function createApplication(options = {}) {
   const manager = options.manager || new BrowserManager(store, options.browser);
   const video = new VideoManager(manager, () => `http://127.0.0.1:${server.address().port}`, options.browser);
   const token = randomBytes(32).toString('hex');
-  const receivers = new Map(['1', '2', '3'].map(id => [id, { lastSeen: null, revision: 0 }]));
+  const receivers = new Map(store.value.devices.map(device => [device.id, { lastSeen: null, revision: 0 }]));
   const direct = new DirectManager(manager, store, id => { const receiver = receivers.get(id); receiver.lastSeen = Date.now(); return receiver; });
   manager.options.onUnavailable = id => { video.invalidate(id); direct.abort(id); };
   manager.options.onPage = (id, page) => direct.attach(id, page);
@@ -100,13 +104,22 @@ export async function createApplication(options = {}) {
       const pathname = url.pathname;
       const method = request.method;
       if (method === 'GET' && pathname === '/health') return send(response, 200, { ok: true });
-      if (method === 'GET' && assets.has(pathname)) {
-        if (pathname === '/assets/admin.js' || pathname === '/assets/demo.js') requireLocal(request);
-        const [file, type] = assets.get(pathname);
-        return send(response, 200, await readFile(path.join(root, 'public', file)), `${type}; charset=utf-8`);
+      if (method === 'GET' && pathname === '/manifest.webmanifest') {
+        requireLocal(request);
+        return send(response, 200, await readFile(path.join(root, 'public', 'manifest.webmanifest')), 'application/manifest+json; charset=utf-8');
       }
-      if (method === 'GET' && /^\/tv\/[123]\/?$/.test(pathname)) {
+      if (method === 'GET' && pathname === '/sw.js') {
+        requireLocal(request);
+        return send(response, 200, await readFile(path.join(root, 'public', 'sw.js')), 'text/javascript; charset=utf-8');
+      }
+      if (method === 'GET' && assets.has(pathname)) {
+        if (pathname === '/assets/admin.js' || pathname === '/assets/demo.js' || pathname.startsWith('/assets/app-icon')) requireLocal(request);
+        const [file, type] = assets.get(pathname);
+        return send(response, 200, await readFile(path.join(root, 'public', file)), type.startsWith('image/png') ? type : `${type}; charset=utf-8`);
+      }
+      if (method === 'GET' && /^\/tv\/\d+\/?$/.test(pathname)) {
         const id = pathname.split('/')[2];
+        store.device(id);
         if (store.device(id).mode === 'direct' && url.searchParams.get('mode') !== 'stream') {
           const port = await direct.start(id);
           const location = new URL(`http://${request.headers.host}`);
@@ -121,18 +134,20 @@ export async function createApplication(options = {}) {
         requireLocal(request);
         return send(response, 200, '<!doctype html><html><head><title>Video encoder</title></head><body></body></html>', 'text/html; charset=utf-8');
       }
-      const videoRoute = pathname.match(/^\/api\/tv\/([123])\/video\/(offer|close)$/);
+      const videoRoute = pathname.match(/^\/api\/tv\/(\d+)\/video\/(offer|close)$/);
       if (method === 'POST' && videoRoute) {
         if (request.headers.origin !== `http://${request.headers.host}`) throw new InputError('Invalid request origin.', 403);
         const body = await jsonBody(request);
         const [, id, action] = videoRoute;
+        store.device(id);
         if (action === 'offer') return send(response, 200, await video.offer(id, body));
         video.release(id, body.session);
         return send(response, 200, { ok: true });
       }
-      const tvRoute = pathname.match(/^\/api\/tv\/([123])\/(status|frame\.jpg)$/);
+      const tvRoute = pathname.match(/^\/api\/tv\/(\d+)\/(status|frame\.jpg)$/);
       if (method === 'GET' && tvRoute) {
         const [, id, action] = tvRoute;
+        store.device(id);
         if (action === 'status') {
           const receiver = receivers.get(id);
           receiver.lastSeen = Date.now();
@@ -154,7 +169,7 @@ export async function createApplication(options = {}) {
           response.writeHead(303, { 'Set-Cookie': 'queue-demo=authenticated; Path=/demo; HttpOnly; SameSite=Strict; Max-Age=2592000', Location: '/demo/queue/1' });
           return response.end();
         }
-        const match = pathname.match(/^\/demo\/queue\/([123])$/);
+        const match = pathname.match(/^\/demo\/queue\/(\d+)$/);
         if (match && method === 'GET') {
           if (!request.headers.cookie?.split(';').some(item => item.trim() === 'queue-demo=authenticated')) {
             response.writeHead(302, { Location: '/demo/login' });
@@ -182,7 +197,7 @@ export async function createApplication(options = {}) {
             devices: store.value.devices.map(device => ({ id: device.id, ...manager.snapshot(device.id), direct: direct.snapshot(device.id), ...receivers.get(device.id), connected: Date.now() - (receivers.get(device.id).lastSeen || 0) < 12000 })),
           });
         }
-        const preview = pathname.match(/^\/api\/admin\/devices\/([123])\/preview\.jpg$/);
+        const preview = pathname.match(/^\/api\/admin\/devices\/(\d+)\/preview\.jpg$/);
         if (preview && method === 'GET') {
           const frame = manager.frame(preview[1], true);
           return frame ? send(response, 200, frame, 'image/jpeg') : send(response, 404, { error: 'No preview yet.' });
@@ -198,8 +213,15 @@ export async function createApplication(options = {}) {
             if (store.value.devices.some(device => device.url)) throw new InputError('Demo setup is available only while all three display URLs are empty.', 409);
             const origin = `http://127.0.0.1:${server.address().port}`;
             await store.save({ ...store.value, loginUrl: `${origin}/demo/login`, devices: store.value.devices.map(device => ({ ...device, url: `${origin}/demo/queue/${device.id}`, readySelector: '[data-queue-ready]' })) });
+          } else if (pathname === '/api/admin/devices') {
+            if (store.value.devices.length >= 100) throw new InputError('Maximum 100 displays.');
+            const id = String(Math.max(0, ...store.value.devices.map(device => Number(device.id))) + 1);
+            const device = validateDevice({ name: body.name || `TV ${id}`, url: '', mode: 'stream', readySelector: '', resolution: '1080p', refreshSeconds: 0 }, id);
+            await store.save({ ...store.value, devices: [...store.value.devices, device] });
+            manager.addDevice(id);
+            receivers.set(id, { lastSeen: null, revision: 0 });
           } else {
-            const deviceRoute = pathname.match(/^\/api\/admin\/devices\/([123])\/(configure|start|stop|refresh|approve|reconnect)$/);
+            const deviceRoute = pathname.match(/^\/api\/admin\/devices\/(\d+)\/(configure|start|stop|refresh|approve|reconnect)$/);
             if (!deviceRoute) throw new InputError('Route not found.', 404);
             const [, id, action] = deviceRoute;
             if (action === 'configure') {

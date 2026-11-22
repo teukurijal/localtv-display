@@ -4,44 +4,47 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Manage three queue displays from one local Windows PC.">
+  <meta name="theme-color" content="#087f72">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/assets/app-icon-192.png?v=2" type="image/png">
   <title>Queue TV Manager</title>
   <link rel="stylesheet" href="/assets/style.css">
   <script src="/assets/admin.js" defer></script>
 </head>
 <body>
   <aside class="sidebar">
-    <a class="brand" href="/"><span class="brand-mark" aria-hidden="true">Q</span><span>Queue TV<span class="brand-sub">DISPLAY MANAGER</span></span></a>
+    <a class="brand" href="/"><img class="brand-mark" src="/assets/app-icon-192.png?v=2" alt=""><span>Queue TV<span class="brand-sub">DISPLAY MANAGER</span></span></a>
     <p class="nav-label">WORKSPACE</p>
     <nav aria-label="Main navigation"><a href="#displays" class="nav-active">▣ <span>Displays</span><span class="nav-count">3</span></a><a href="#session">◉ <span>Browser session</span></a><a href="#setup">☷ <span>Setup guide</span></a></nav>
     <div class="sidebar-footer"><span class="local-dot"></span> Local network only<p>Controlled from this PC.<br>Displayed across your clinic.</p><span class="version">QUEUE TV · v0.1</span></div>
   </aside>
   <main class="workspace">
-    <header class="topbar"><span>Workspace <span class="slash">/</span> <strong>Display control</strong></span><span class="local-label">PC ADMIN</span></header>
+    <header class="topbar"><span>Workspace <span class="slash">/</span> <strong>Display control</strong></span><div class="topbar-actions"><button id="install-app" class="secondary" type="button" hidden>Install app</button><span class="local-label">PC ADMIN</span></div></header>
     <div class="page-content">
       <div id="connection-error" class="notice error" role="alert" hidden>Connection to the PC service was lost. Reconnecting automatically…</div>
-      <div class="heading-row"><div><p class="eyebrow">ONE SESSION. THREE SCREENS.</p><h1>Your queue, in view.</h1><p class="intro">Manage every poli display from one place.</p></div><div class="network-status"><span class="local-dot"></span><span id="connected-count">0 of 3 TVs connected</span></div></div>
+      <div class="heading-row"><div><h1>Display control</h1><p class="intro">Manage your queue screens from this PC.</p></div><div class="network-status"><span class="local-dot"></span><span id="connected-count">0 of 3 TVs connected</span></div></div>
 
       <section class="session-panel panel" id="session" aria-labelledby="session-heading">
-        <div class="session-icon" aria-hidden="true">◈</div>
+        
         <div class="session-copy"><div class="inline-heading"><h2 id="session-heading">Queue website session</h2><span id="browser-status" class="badge">Not started</span></div><p id="session-description">Save the login URL, then sign in once in the Chromium window on this PC.</p></div>
         <button id="login-button" type="button">Open login browser</button>
         <form id="settings-form" class="session-settings">
           <label class="login-url">Website login URL<input id="login-url" name="loginUrl" type="url" placeholder="https://queue.example.com/login" maxlength="2048" required></label>
-          <label>Compatibility frame rate<select id="fps"><option value="1">1 frame / second</option><option value="2">2 frames / second</option><option value="3">3 frames / second</option></select></label>
-          <label>JPEG quality<select id="quality"><option value="60">60% · lower bandwidth</option><option value="80" selected>80% · balanced</option><option value="95">95% · sharper text</option></select></label>
+          <details class="advanced-settings"><summary>Streaming settings</summary><div class="advanced-fields"><label>Compatibility frame rate<select id="fps"><option value="1">1 frame / second</option><option value="2">2 frames / second</option><option value="3">3 frames / second</option></select></label>
+          <label>JPEG quality<select id="quality"><option value="60">60% · lower bandwidth</option><option value="80" selected>80% · balanced</option><option value="95">95% · sharper text</option></select></label></div></details>
           <button class="secondary" type="submit">Save settings</button>
         </form>
         <p class="session-note">Login stays in a dedicated browser profile on this PC. The TVs receive only the pages you approve.</p>
       </section>
 
       <section id="displays" aria-labelledby="display-heading">
-        <div class="section-heading"><div><h2 id="display-heading">Your displays <span class="count-label">3</span></h2><p>A separate queue page for each screen.</p></div><span id="stream-count" class="muted">0 live streams</span></div>
+        <div class="section-heading"><div><h2 id="display-heading">Your displays <span class="count-label">3</span></h2><p>A separate queue page for each screen.</p></div><div><span id="stream-count" class="muted">0 live streams</span> <button id="add-tv" class="secondary" type="button">Add TV</button></div></div>
         <div id="display-grid" class="display-grid"></div>
       </section>
 
       <section id="setup" class="setup-panel panel" aria-labelledby="setup-heading">
-        <div class="section-heading"><div><p class="eyebrow">FIRST-TIME SETUP</p><h2 id="setup-heading">Bring your screens online</h2></div><button id="demo-button" class="secondary" type="button">Try the local demo</button></div>
-        <div class="steps"><div><span class="step-num">1</span><h3>Sign in on the PC</h3><p>Save the website login URL and open Chromium. Log in with your shared account.</p></div><div><span class="step-num">2</span><h3>Assign your queues</h3><p>Configure each display URL, start it, and check its preview before approving.</p></div><div><span class="step-num">3</span><h3>Open each TV receiver</h3><p>On the same Wi-Fi, enter the matching receiver address in the TV’s Browser-App.</p></div></div>
+        <div class="section-heading"><div><h2 id="setup-heading">Connection &amp; setup</h2></div><button id="demo-button" class="secondary" type="button">Try the local demo</button></div>
+        <details class="setup-guide"><summary>Show setup steps</summary><div class="steps"><div><span class="step-num">1</span><h3>Sign in on the PC</h3><p>Save the website login URL and open Chromium. Log in with your shared account.</p></div><div><span class="step-num">2</span><h3>Assign your queues</h3><p>Configure each display URL, start it, and check its preview before approving.</p></div><div><span class="step-num">3</span><h3>Open each TV receiver</h3><p>On the same Wi-Fi, enter the matching receiver address in the TV’s Browser-App.</p></div></div></details>
         <div class="network-help"><label for="lan-address">PC network address</label><select id="lan-address" aria-describedby="network-hint"></select><p id="network-hint">Choose the Wi-Fi adapter’s IPv4 address. Allow the port on the Windows Private network and reserve this IP in your router.</p></div>
       </section>
       <footer class="page-footer"><span>Queue TV Manager · Local display workspace</span><span id="service-stats">Waiting for service…</span></footer>
@@ -54,8 +57,8 @@
       <button class="preview" type="button" data-action="preview" aria-label="Enlarge display preview"><img class="preview-image" alt="Private PC preview of this display" hidden><span class="preview-empty"><span class="monitor-icon" aria-hidden="true"></span><strong>Ready when you are</strong><span>Configure a queue URL to get started</span></span><span class="preview-label" hidden>PC preview · click to enlarge</span></button>
       <div class="card-body"><div class="receiver-status"><span class="status-dot"></span><span class="receiver-text">Waiting for TV</span><span class="resolution-label">1080p</span></div><p class="display-message">Save the queue URL, then start this display.</p>
         <button class="approve-button" type="button" data-action="approve" hidden>Approve page for TV</button>
-        <div class="actions"><button type="button" data-action="start">Start display</button><button type="button" data-action="stop" class="secondary">Stop</button><button type="button" data-action="refresh" class="icon-button" aria-label="Refresh queue page" title="Refresh queue page">↻</button><button type="button" data-action="reconnect" class="icon-button" aria-label="Reconnect TV receiver" title="Reconnect TV receiver">⟳</button></div>
-        <p class="direct-message field-help"></p><details class="display-settings"><summary>Display settings</summary><form class="device-form"><label>TV / poli name<input name="name" maxlength="60" required></label><label>Queue display URL<input name="url" type="url" maxlength="2048" placeholder="https://queue.example.com/poli/umum"></label><label>Display method<select name="mode"><option value="stream">Video / compatibility stream</option><option value="direct">PC gateway · direct website</option></select></label><p class="field-help">Render the website and play videos on the TV through the PC login. Keep the PC display running and approved. Missing resources appear below.</p><label>Resolution<select name="resolution"><option value="720p">1280 × 720</option><option value="1080p">1920 × 1080</option><option value="4k">3840 × 2160</option></select></label><label>Protected-page ready selector <span class="optional">optional</span><input name="readySelector" placeholder="e.g. #queue-board" maxlength="500"></label><p class="field-help">A CSS selector visible only on the authenticated queue board. Enables automatic approval and recovery. Leave blank to approve manually after navigation.</p><label>Auto-refresh interval (seconds)<input name="refreshSeconds" type="number" min="0" max="86400" step="1" value="0"></label><p class="field-help">0 = off. Minimum 30 seconds; requires a ready selector.</p><button class="secondary" type="submit">Save display</button></form></details>
+        <div class="actions"><button type="button" data-action="start">Start display</button><button type="button" data-action="stop" class="secondary">Stop</button><details class="more-actions"><summary>More</summary><div><button type="button" data-action="refresh" class="secondary">Refresh page</button><button type="button" data-action="reconnect" class="secondary">Reconnect TV</button></div></details></div>
+        <p class="direct-message field-help"></p><details class="display-settings"><summary>Display settings</summary><form class="device-form"><label>TV / poli name<input name="name" maxlength="60" required></label><label>Queue display URL<input name="url" type="url" maxlength="2048" placeholder="https://queue.example.com/poli/umum"></label><label>Display method<select name="mode"><option value="stream">Video / compatibility stream</option><option value="direct">PC gateway · direct website</option></select></label><details class="device-advanced"><summary>Advanced settings</summary><div><label>Resolution<select name="resolution"><option value="720p">1280 × 720</option><option value="1080p">1920 × 1080</option><option value="4k">3840 × 2160</option></select></label><label>Protected-page ready selector <span class="optional">optional</span><input name="readySelector" placeholder="e.g. #queue-board" maxlength="500"></label><p class="field-help">A CSS selector visible only on the authenticated queue board. Enables automatic approval and recovery. Leave blank to approve manually after navigation.</p><label>Auto-refresh interval (seconds)<input name="refreshSeconds" type="number" min="0" max="86400" step="1" value="0"></label><p class="field-help">0 = off. Minimum 30 seconds; requires a ready selector.</p></div></details><button class="secondary" type="submit">Save display</button></form></details>
       </div><div class="receiver-address"><span>OPEN ON THIS TV</span><div><code class="receiver-url"></code><button type="button" data-action="copy" class="copy-button" aria-label="Copy TV receiver address">Copy</button></div><span class="last-seen">Never connected</span></div>
     </article>
   </template>

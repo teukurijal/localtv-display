@@ -4,6 +4,8 @@ Run three independent outpatient queue displays from one Windows PC. Sign in to 
 
 This is a working LAN prototype. The real queue-site session policy, AQUA Browser-App compatibility, Windows startup/firewall behavior, and a full clinic-day soak test still need to be checked on the target equipment.
 
+Use **Add TV** in the dashboard to create another display, then configure its name and queue URL in **Display settings**. Each added TV has its own receiver URL (`/tv/4`, `/tv/5`, and so on), and its configuration is saved across restarts. Up to 100 displays can be configured; actual capacity depends on the PC and network. In gateway mode each TV also needs the TCP port equal to the main port plus its TV number, subject to the port 65535 limit.
+
 ## Windows quick start
 
 1. Copy this project to a stable local folder, for example `C:\QueueTVManager`. Keep `src`, `public`, `scripts`, `package.json`, and `package-lock.json` together. Do not copy Linux `node_modules` to Windows.
@@ -21,6 +23,14 @@ npm start
 ```
 
 The default listener is `0.0.0.0:8443`. The admin interface and control API require a loopback connection, a matching loopback Host, and a per-process admin token. A TV or another LAN device cannot use the admin API. Other users/processes with access to this Windows session can administer it; use a dedicated Windows account if needed.
+
+### Install the PC controller as a Windows app
+
+1. Start Queue TV Manager on the Windows PC and open **http://localhost:8443** in Microsoft Edge or Google Chrome on that same PC.
+2. Click **Install app** in the controller if the button appears, then accept the browser prompt. You can also use the browser's **Install this site as an app** menu.
+3. Launch **Queue TV Manager** from the Windows Start menu or taskbar. It opens in its own app window.
+
+Installation adds the controller window; it does not install or start the Node.js service. Keep `scripts\start-windows.cmd` running or configure the existing Windows sign-in startup shortcut below. The app still needs the PC service to operate. If the service is offline, the installed window shows a retry page. Use `localhost` on this PC: the admin controls remain unavailable from a TV or another LAN device. Installing from a different port creates a separate browser app.
 
 ## Try the complete demo
 
@@ -164,6 +174,7 @@ npm test
 npm run test:browser
 npm run test:video
 npm run test:direct
+npm run test:pwa
 ```
 
 The direct integration tests verify authenticated HTML/assets, native animation and WebM playback, live queue data, per-display separation, cookie isolation/rotation, files above 8 MiB, byte-range seeking, blocked unobserved requests and redirects, non-replayed POSTs, transfer cancellation, expired sessions, and network recovery.

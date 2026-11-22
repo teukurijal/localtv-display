@@ -16,7 +16,7 @@ export class BrowserManager {
     this.closing = false;
     this.recoveryTimer = null;
     this.lastError = '';
-    this.displays = new Map(['1', '2', '3'].map(id => [id, runtime(id)]));
+    this.displays = new Map(store.value.devices.map(device => [device.id, runtime(device.id)]));
   }
 
   async ensureBrowser() {
@@ -114,6 +114,8 @@ export class BrowserManager {
     item.message = '';
     if (page && !page.isClosed()) await page.close().catch(() => {});
   }
+
+  addDevice(id) { this.displays.set(id, runtime(id)); }
 
   async start(id) {
     const device = this.store.device(id);

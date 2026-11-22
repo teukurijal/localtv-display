@@ -7,6 +7,24 @@ let busy = false;
 let hydrated = false;
 let activePreview = null;
 let toastTimer;
+let installPrompt;
+
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => { navigator.serviceWorker.register('/sw.js').catch(() => {}); });
+}
+window.addEventListener('beforeinstallprompt', event => {
+  event.preventDefault();
+  installPrompt = event;
+  $('#install-app').hidden = false;
+});
+window.addEventListener('appinstalled', () => { installPrompt = null; $('#install-app').hidden = true; });
+$('#install-app').addEventListener('click', async () => {
+  if (!installPrompt) return;
+  const prompt = installPrompt;
+  installPrompt = null;
+  $('#install-app').hidden = true;
+  try { await prompt.prompt(); } catch { /* The browser may have dismissed the prompt. */ }
+});
 
 function toast(message, error = false) {
   const element = $('#toast');
@@ -87,13 +105,16 @@ function setPreview(id, url) {
 }
 
 function render() {
-  $('#connected-count').textContent = `${state.devices.filter(device => device.connected).length} of 3 TVs connected`;
+  for (const device of state.config.devices) if (!cards.has(device.id)) createCard(device.id, device);
+  $('.count-label').textContent = state.config.devices.length;
+  $('.nav-count').textContent = state.config.devices.length;
+  $('#connected-count').textContent = `${state.devices.filter(device => device.connected).length} of ${state.devices.length} TVs connected`;
   const live = state.devices.filter(device => device.frameAvailable).length;
   $('#stream-count').textContent = `${live} live stream${live === 1 ? '' : 's'}`;
   $('#browser-status').textContent = state.browser.running ? 'Browser open' : 'Not started';
   $('#browser-status').className = `badge${state.browser.running ? ' live' : ''}`;
   $('#session-description').textContent = state.browser.error || (state.browser.running
-    ? `${live} of 3 pages cleared for display. Check the previews to confirm the website login.`
+    ? `${live} of ${state.devices.length} pages cleared for display. Check the previews to confirm the website login.`
     : 'Save the login URL, then sign in once in the Chromium window on this PC.');
   $('#login-button').disabled = busy || !state.config.loginUrl;
   $('#demo-button').hidden = state.config.devices.some(device => device.url);
@@ -131,12 +152,13 @@ function render() {
   if (!hydrated) { populate(); hydrated = true; }
 }
 
-for (const id of ['1', '2', '3']) {
+function createCard(id, device) {
   const card = $('#display-template').content.firstElementChild.cloneNode(true);
   card.dataset.id = id;
   $('.display-number', card).textContent = `TV ${id}`;
   cards.set(id, card);
   $('#display-grid').append(card);
+  if (device) { const form = $('.device-form', card); for (const key of ['name', 'url', 'mode', 'readySelector', 'resolution', 'refreshSeconds']) form.elements[key].value = device[key]; }
   card.addEventListener('click', event => {
     const button = event.target.closest('[data-action]');
     if (!button) return;
@@ -161,6 +183,8 @@ for (const id of ['1', '2', '3']) {
     perform(() => api(`devices/${id}/configure`, data), 'Display settings saved.');
   });
 }
+
+$('#add-tv').addEventListener('click', () => perform(() => api('devices', {}), 'TV added. Configure its display settings.'));
 
 $('#settings-form').addEventListener('submit', event => {
   event.preventDefault();

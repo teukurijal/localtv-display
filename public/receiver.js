@@ -1,7 +1,7 @@
 /* ES5 syntax and XMLHttpRequest keep the receiver usable on older TV browsers. */
 (function () {
   'use strict';
-  var match = window.location.pathname.match(/\/tv\/([123])/);
+  var match = window.location.pathname.match(/\/tv\/(\d+)/);
   var id = match ? match[1] : '1';
   var display = document.getElementById('display');
   var offline = document.getElementById('offline');

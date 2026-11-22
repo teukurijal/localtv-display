@@ -68,10 +68,10 @@ export class ConfigStore {
     await mkdir(this.directory, { recursive: true, mode: 0o700 });
     try {
       const data = JSON.parse(await readFile(this.file, 'utf8'));
-      if (data.version !== 1 || !Array.isArray(data.devices) || data.devices.length !== 3) throw new Error('Invalid configuration');
+      if (data.version !== 1 || !Array.isArray(data.devices) || data.devices.length < 1 || data.devices.length > 100) throw new Error('Invalid configuration');
       this.value = {
         version: 1, ...this.settings(data),
-        devices: data.devices.map((item, i) => validateDevice(item, String(i + 1), item.enabled === true)),
+        devices: data.devices.map((item, i) => validateDevice(item, item.id || String(i + 1), item.enabled === true)),
       };
     } catch (error) {
       if (error.code !== 'ENOENT') throw new Error('Configuration could not be loaded. Restore config.json from a backup before restarting.');
