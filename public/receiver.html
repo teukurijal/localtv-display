@@ -1,9 +1,12 @@
 <!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Queue TV Display</title><link rel="stylesheet" href="/assets/receiver.css"><script src="/assets/receiver.js" defer></script></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Queue TV Display</title><link rel="stylesheet" href="/assets/receiver.css"><script src="/assets/video-receiver.js" defer></script><script src="/assets/receiver.js" defer></script></head>
 <body>
+  <video id="video" autoplay muted playsinline></video>
   <img id="display" alt="Assigned queue display">
   <div id="offline"><div><div class="receiver-mark">Q</div><p id="tv-name">QUEUE TV</p><h1 id="status-heading">Connecting to your queue…</h1><p id="status-message">The display will appear automatically when it is ready.</p><p id="receiver-id"></p></div></div>
+  <button id="stream-mode" type="button">Compatibility mode</button>
+  <span id="stream-status" role="status">Connecting</span>
   <button id="fullscreen" type="button">Enter fullscreen</button>
 </body>
 </html>

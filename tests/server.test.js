@@ -41,7 +41,7 @@ test('HTTP endpoints isolate receiver data and reject unauthorized controls', as
   assert.equal((await post('/api/admin/demo', {})).status, 200);
   assert.equal((await post('/api/admin/demo', {})).status, 409);
   const receiver = await (await request('/api/tv/1/status')).json();
-  assert.deepEqual(Object.keys(receiver).sort(), ['available', 'interval', 'name', 'revision', 'state']);
+  assert.deepEqual(Object.keys(receiver).sort(), ['available', 'interval', 'mode', 'name', 'revision', 'state', 'video']);
   assert.equal((await post('/api/admin/devices/1/reconnect', {})).status, 200);
   assert.equal((await (await request('/api/tv/1/status')).json()).revision, 1);
   const admin = await (await request('/api/admin/state', { headers: { 'X-Admin-Token': session.token } })).json();

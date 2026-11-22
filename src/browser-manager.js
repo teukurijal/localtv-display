@@ -2,8 +2,8 @@ import path from 'node:path';
 import { chromium } from 'playwright';
 import { InputError, RESOLUTIONS, httpUrl } from './config.js';
 
-function runtime() {
-  return { page: null, state: 'stopped', message: '', epoch: 0, approvedEpoch: -1, frame: null, preview: null, capturedAt: 0, timer: null, retryTimer: null, nextRefresh: 0 };
+function runtime(id) {
+  return { id, page: null, state: 'stopped', message: '', epoch: 0, approvedEpoch: -1, frame: null, preview: null, capturedAt: 0, timer: null, retryTimer: null, nextRefresh: 0 };
 }
 
 export class BrowserManager {
@@ -16,7 +16,7 @@ export class BrowserManager {
     this.closing = false;
     this.recoveryTimer = null;
     this.lastError = '';
-    this.displays = new Map(['1', '2', '3'].map(id => [id, runtime()]));
+    this.displays = new Map(['1', '2', '3'].map(id => [id, runtime(id)]));
   }
 
   async ensureBrowser() {
@@ -90,10 +90,15 @@ export class BrowserManager {
     }
   }
 
+  withhold(item) {
+    item.frame = null;
+    item.approvedEpoch = -1;
+    this.options.onUnavailable?.(item.id);
+  }
+
   invalidate(item) {
     item.epoch += 1;
-    item.approvedEpoch = -1;
-    item.frame = null;
+    this.withhold(item);
     item.preview = null;
     item.capturedAt = 0;
   }
@@ -121,6 +126,7 @@ export class BrowserManager {
       const context = await this.ensureBrowser();
       page = await context.newPage();
       item.page = page;
+      this.options.onPage?.(id, page);
       await page.setViewportSize(RESOLUTIONS[device.resolution]);
       page.on('framenavigated', frame => {
         if (frame === page.mainFrame() && item.page === page) {
@@ -140,7 +146,7 @@ export class BrowserManager {
     } catch {
       if (!page || item.page === page) {
         item.state = 'error';
-        item.frame = null;
+        this.withhold(item);
         item.message = this.lastError || 'Queue page could not load. Check the URL and network, then start again.';
         // Start is retried after transient failures while this display remains enabled.
         this.retryPage(id);
@@ -182,7 +188,7 @@ export class BrowserManager {
     const epoch = item.epoch;
     try {
       const ready = await this.checkPage(page, device);
-      if (!ready) { item.frame = null; item.approvedEpoch = -1; }
+      if (!ready) this.withhold(item);
       const jpeg = await page.screenshot({ type: 'jpeg', quality: this.store.value.quality, timeout: 5000, caret: 'hide' });
       // Never publish a capture that raced with navigation, stop, or a configuration change.
       if (item.page !== page || item.epoch !== epoch) return;
@@ -196,8 +202,7 @@ export class BrowserManager {
         item.state = 'streaming';
         item.message = '';
       } else {
-        item.frame = null;
-        item.approvedEpoch = -1;
+        this.withhold(item);
         item.state = 'awaiting-approval';
         item.message = !stillReady ? 'Protected page is not ready. Check the PC login and ready selector.' : 'Check the preview, then approve this page for the TV.';
       }
@@ -208,9 +213,8 @@ export class BrowserManager {
       }
     } catch {
       if (item.page === page) {
-        item.frame = null;
+        this.withhold(item);
         item.preview = null;
-        item.approvedEpoch = -1;
         item.state = 'error';
         item.message = 'Capture unavailable. Check the page and ready selector; capture will retry automatically.';
       }

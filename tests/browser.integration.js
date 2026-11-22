@@ -70,7 +70,7 @@ test('one persistent login drives three isolated receivers and recovers safely',
   const receiverContext = await browser.newContext();
   const receivers = await Promise.all(['1', '2', '3'].map(async id => {
     const receiver = await receiverContext.newPage();
-    await receiver.goto(`${base}/tv/${id}`);
+    await receiver.goto(`${base}/tv/${id}?mode=jpeg`);
     await receiver.locator('#display').waitFor({ state: 'visible' });
     return receiver;
   }));

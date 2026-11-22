@@ -1,6 +1,6 @@
 # Local Queue TV Manager
 
-Run three independent outpatient queue displays from one Windows PC. Sign in to the queue website in a dedicated Chromium window; each AQUA TV opens a local receiver URL and receives its own captured page.
+Run three independent outpatient queue displays from one Windows PC. Sign in to the queue website in a dedicated Chromium window; each AQUA TV opens a local receiver URL and renders its assigned website through the PC gateway, or receives a video stream.
 
 This is a working LAN prototype. The real queue-site session policy, AQUA Browser-App compatibility, Windows startup/firewall behavior, and a full clinic-day soak test still need to be checked on the target equipment.
 
@@ -34,11 +34,42 @@ The built-in demo has three different queue pages and one shared login. It uses 
 
 The demo has a protected-page marker, so it approves only authenticated queue pages automatically. The live clock makes it easy to check whether frames are updating. To switch to the real site, save the real login URL and replace each display URL and ready selector.
 
+## PC gateway / direct website display
+
+Choose **Display settings → Display method → PC gateway · direct website**, then save. Keep the PC display running, logged in, and approved. Open the usual `/tv/1`, `/tv/2`, or `/tv/3` receiver address. It redirects to a separate local origin for that TV, where the TV renders HTML/CSS/JavaScript and plays media itself. Animations and videos are no longer limited by screen-capture frame rate; compatibility and performance still depend on the TV browser. Existing `direct` settings use the gateway automatically. Legacy Trustmedis pharmacy configurations without a saved method also select it; explicitly saved streaming settings are preserved.
+
+The PC gateway has two paths:
+
+- **Page and queue data:** the approved HTML document and latest data responses are relayed from the PC page. Source polling runs once on the PC; TV GET/POST data requests consume these responses without replaying queue-consumption operations upstream.
+- **Assets and media:** observed same-origin scripts, stylesheets, images, fonts, and audio/video resources are fetched through the gateway using the PC browser's current cookies and observed authorization headers. Binary media streams with backpressure instead of being buffered or re-encoded. Single byte ranges, suffix ranges, and HEAD requests support native playback and seeking, including files larger than 8 MiB. Response cookie changes are applied to the PC browser only.
+
+The TV receives neither session cookies nor authentication headers. Its own Cookie/Authorization headers cannot replace the PC session. The PC preview and approval monitor still use screenshots, but screenshots are not sent to the direct receiver. Website audio can play on the TV subject to its codec and autoplay policies; a click or remote interaction may be required.
+
+Only same-origin resources actually observed for that display can be served. Other query values and POST bodies must match; numeric jQuery/ExtJS cache-busters (`_`, `_dc`) are ignored. Absolute upstream URLs in HTML/CSS/JS are rewritten to the separate local origin. Public third-party assets are loaded directly by the TV. Observed same-origin asset redirect chains resolve to their known final destination; a new upstream redirect holds the display until the source is refreshed. Redirects never forward the session to an unobserved host. Upstream framing policies are preserved; the shell and page share a dedicated origin, separate from the admin origin.
+
+With `yarn dev --port 3001`, direct TV 1 uses **3002**, TV 2 uses **3003**, and TV 3 uses **3004**. Each port opens only when that mode is selected or its receiver is opened. Allow the required TCP ports on the trusted LAN. Occupied ports are reported instead of silently choosing a different address. Start below port 65533 to leave room for all three displays. Keep using the receiver link from the admin card; you do not have to enter the additional port manually.
+
+Stop, navigation, lost approval, session-check failure, or loss of the PC connection blanks the direct receiver. Stop, approval loss and mode changes cancel active gateway transfers; closing a TV request also releases its upstream connection. Navigation clears the old resource allowlist and cached data. An observed HTTP 401/403, password form, or gateway asset returning HTML holds the display until the operator signs in on the PC and refreshes the source page. **Reconnect** reloads the display. Switching back to streaming sends existing direct receivers back to the streaming page. An individual streaming receiver can also be opened with `/tv/1?mode=stream` while testing the gateway.
+
+This gateway supports approved display traffic rather than arbitrary browsing. WebSockets, browser-local authentication state, authenticated third-party origins, unobserved adaptive-media segments, and requests whose parameters depend on TV-local state still need a site-specific adapter. Partitioned response cookies are not imported into the PC's ordinary cookie jar. Main documents/data are bounded to 8 MiB per response and 64 MiB per display; rewritten text assets are bounded to 8 MiB. Binary transfers have no fixed file-size limit, with at most 16 active requests per display and a 30-second inactivity timeout. The admin card reports active transfers, observed assets, and missing request paths without exposing query tokens or request bodies. Authenticated Trustmedis compatibility must still be checked on the real session and TV model.
+
+## Smooth video streaming
+
+TV receivers now try WebRTC video automatically. Open the same receiver URL, such as `http://PC-LAN-IP:3001/tv/1` when running `yarn dev --port 3001`. The PC keeps the website login; the TV needs only a browser and the receiver URL, not Miracast or Chromecast.
+
+The receiver shows **Live video** once playback starts. **Use compatibility mode** switches to JPEG frames; **Try video** switches back. You can also bookmark `/tv/1?mode=jpeg` to always use JPEG. Unsupported browsers or failed video connections fall back automatically, with video retries after 30 seconds. The PC and TV must be able to communicate directly on the LAN; client isolation or a firewall blocking Chromium's WebRTC traffic can prevent video even when HTTP works.
+
+Video targets 1280 × 720 at up to 30 fps, with a 4 Mbps encoding limit per viewer. Actual frame rate depends on page animation, PC capacity and the TV decoder. Test all three displays on the actual equipment. Up to two video viewers per display are allowed; additional viewers can use compatibility mode. The admin's frame-rate and quality settings control JPEG captures/previews, not video's target rate.
+
+Video is currently silent. Each display is captured automatically through Chromium's screencast interface, so there is no screen-picker step. A separate Chromium encoder receives only approved images and creates the WebRTC stream; it has no queue-site cookies. Navigation, Stop, lost approval, a missing protected-page marker, and capture failures close the corresponding video stream. The existing limitations of manual approval still apply: use a reliable protected-page ready selector to detect in-page login/session changes.
+
+Connections use local ICE candidates with no external STUN/TURN service. TVs whose browsers/codecs cannot play WebRTC retain the JPEG option. Closing a receiver releases its connection; abandoned sessions expire after 15 seconds without status polling.
+
 ## Use the real queue website
 
 1. Save the website **login URL** in the PC admin panel.
 2. Click **Open login browser** and sign in manually in that dedicated Chromium window. This is separate from your regular Chrome profile.
-3. In each card’s **Display settings**, save its poli name, queue URL, and resolution. Start with 1080p, 1 frame/second, and 80% JPEG quality.
+3. In each card’s **Display settings**, save its poli name, queue URL, and resolution. Start with 720p; the JPEG fallback defaults to 1 frame/second and 80% quality.
 4. Start each display. Enlarge the private PC preview and confirm the correct, authenticated poli page appears.
 5. Without a ready selector, click **Approve page for TV**. Approval is reset when the main page navigates, is refreshed, is restarted, or capture fails. A visible password field cannot be approved.
 6. Open the card’s receiver address in the corresponding TV browser. Pick the actual Wi-Fi IPv4 address from the PC network selector; systems with VPN/WSL adapters may list several addresses.
@@ -117,9 +148,9 @@ Changing the port or PC IP also changes the TV receiver addresses. The built-in 
 
 ## Implementation
 
-Node.js provides the HTTP backend and static admin/receiver UI; Playwright is the only runtime package. Each poli uses a separate page in one persistent Chromium context. Shared cookies/storage provide one login when the website supports it. Screenshots are captured without overlapping work within a page and held in memory. Receivers poll JPEG frames and status independently, with timeouts, bounded retry delays, and a blank/offline state on failures.
+Node.js provides the HTTP backend and static admin/receiver UI. Playwright controls a persistent Chromium context; tough-cookie validates response cookies before applying them to that browser's session. Each poli uses a separate page. Shared cookies/storage provide one login when the website supports it. The PC gateway relays approved page/data responses and streams observed assets/media through authenticated requests. Screenshots are captured without overlapping work within a page and held in memory. Receivers poll status independently, with timeouts, bounded retry delays, and a blank/offline state on failures. Screen streaming uses Chromium screencast frames and an isolated canvas/WebRTC encoder; JPEG fallback polls approved screenshots.
 
-This first implementation uses HTTP image-frame streaming and status polling. It does not need WebRTC, a build pipeline, a database, or a cloud service. The UI is plain HTML/CSS/JavaScript; the TV script uses ES5 syntax and XMLHttpRequest for older TV browsers. Queue audio is **not transmitted**. Audio announcements require a separate design and test.
+Receivers follow the selected gateway or streaming mode. Streaming prefers WebRTC, with HTTP JPEG polling as a compatibility fallback. No build pipeline, database, or cloud service is required. The UI is plain HTML/CSS/JavaScript; the TV shell uses ES5 syntax and XMLHttpRequest for older TV browsers, while the proxied website retains its own browser requirements. Screen streaming does **not transmit audio**. Gateway mode lets the website play audio on the TV; its autoplay behavior and announcement timing must be checked with the real site.
 
 Capturing three 4K pages costs more CPU and bandwidth than 1080p. Start at 1 fps and measure on the real PC. The dashboard reports Node server memory only; use Windows Task Manager for Chromium CPU/RAM and total network usage. A frame is withheld if its capture is over 10 seconds old; this does not detect a queue website that itself stops updating.
 
@@ -131,7 +162,13 @@ Playwright references: [persistent browser context](https://playwright.dev/docs/
 npm run check
 npm test
 npm run test:browser
+npm run test:video
+npm run test:direct
 ```
+
+The direct integration tests verify authenticated HTML/assets, native animation and WebM playback, live queue data, per-display separation, cookie isolation/rotation, files above 8 MiB, byte-range seeking, blocked unobserved requests and redirects, non-replayed POSTs, transfer cancellation, expired sessions, and network recovery.
+
+The video integration test exercises real WebRTC playback, independent animated sources, approval revocation, and JPEG fallback in headless Chromium. It does not certify any physical TV model.
 
 The browser integration test uses temporary data and headless Chromium. It exercises a single shared login, three different streams, LAN admin isolation, selector/manual approval, per-TV refresh/stop, receiver reconnection, service restart with persistent authentication, browser recovery, and desktop/mobile admin layouts. Demo screenshots are written to ignored `test-results/`. It never uses a real account.
 
@@ -155,5 +192,5 @@ The browser integration test uses temporary data and headless Chromium. It exerc
 | TV shows an offline state | Check the server, page capture and Wi-Fi. The receiver retries automatically. |
 | Session does not survive restart | Check the website’s session policy. A persistent profile cannot extend a server-expired session. |
 | Multiple poli tabs log each other out | Confirm the website permits shared-account concurrent pages before adding streaming workarounds. |
-| Queue calls have no sound | Image-frame streaming is video-only; this version does not carry browser audio. |
+| Queue calls have no sound | Screen streaming is video-only. In gateway mode, check the website's audio resources, TV volume, codec support, and autoplay permission. |
 | Port already in use | Stop the other instance or choose a different `PORT` and update receiver URLs/firewall. |

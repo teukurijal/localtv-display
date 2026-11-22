@@ -15,7 +15,7 @@ export function defaults() {
   return {
     version: 1, loginUrl: '', fps: 1, quality: 80,
     devices: ['Poli Umum', 'Poli Anak', 'Poli Gigi'].map((name, i) => ({
-      id: String(i + 1), name, url: '', readySelector: '', resolution: '1080p', refreshSeconds: 0, enabled: false,
+      id: String(i + 1), name, url: '', mode: 'stream', readySelector: '', resolution: '1080p', refreshSeconds: 0, enabled: false,
     })),
   };
 }
@@ -41,13 +41,22 @@ export function validateDevice(value, id, enabled = false) {
   if (!value || typeof value.name !== 'string' || !value.name.trim() || value.name.trim().length > 60) {
     throw new InputError('Display name must contain 1–60 characters.');
   }
+  // Existing Trustmedis pharmacy displays migrate to native rendering. An
+  // explicitly saved method always wins; other existing sites keep streaming.
+  let legacyMode = 'stream';
+  try {
+    const target = new URL(value.url);
+    if (target.hostname.endsWith('.trustmedis.id') && /\/farmasi\/display_loket_penjualan\/show\/?$/.test(target.pathname)) legacyMode = 'direct';
+  } catch {}
+  const mode = value.mode ?? legacyMode;
+  if (!['stream', 'direct'].includes(mode)) throw new InputError('Choose streaming or direct website mode.');
   if (!Object.hasOwn(RESOLUTIONS, value.resolution)) throw new InputError('Choose 720p, 1080p or 4k.');
   if (typeof value.readySelector !== 'string' || value.readySelector.length > 500) throw new InputError('Ready selector must be at most 500 characters.');
   const refreshSeconds = numberIn(value.refreshSeconds, 0, 86400, 'Refresh interval');
   if (refreshSeconds > 0 && refreshSeconds < 30) throw new InputError('Automatic refresh must be at least 30 seconds.');
   if (refreshSeconds && !value.readySelector.trim()) throw new InputError('Set a protected-page ready selector before enabling automatic refresh.');
   return {
-    id, name: value.name.trim(), url: httpUrl(value.url),
+    id, name: value.name.trim(), url: httpUrl(value.url), mode,
     readySelector: value.readySelector.trim(), resolution: value.resolution, refreshSeconds, enabled,
   };
 }

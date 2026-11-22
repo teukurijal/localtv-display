@@ -7,12 +7,15 @@ import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { parseArgs } from 'node:util';
 import { ConfigStore, InputError, validateDevice } from './config.js';
 import { BrowserManager } from './browser-manager.js';
+import { VideoManager } from './video-manager.js';
+import { DirectManager } from './direct-manager.js';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const localHosts = new Set(['localhost', '127.0.0.1', '[::1]']);
 const assets = new Map([
   ['/assets/admin.js', ['admin.js', 'text/javascript']],
   ['/assets/style.css', ['style.css', 'text/css']],
+  ['/assets/video-receiver.js', ['video-receiver.js', 'text/javascript']],
   ['/assets/receiver.js', ['receiver.js', 'text/javascript']],
   ['/assets/receiver.css', ['receiver.css', 'text/css']],
   ['/assets/demo.js', ['demo.js', 'text/javascript']],
@@ -65,8 +68,12 @@ export async function createApplication(options = {}) {
   const store = options.store || new ConfigStore(directory);
   await store.load();
   const manager = options.manager || new BrowserManager(store, options.browser);
+  const video = new VideoManager(manager, () => `http://127.0.0.1:${server.address().port}`, options.browser);
   const token = randomBytes(32).toString('hex');
   const receivers = new Map(['1', '2', '3'].map(id => [id, { lastSeen: null, revision: 0 }]));
+  const direct = new DirectManager(manager, store, id => { const receiver = receivers.get(id); receiver.lastSeen = Date.now(); return receiver; });
+  manager.options.onUnavailable = id => { video.invalidate(id); direct.abort(id); };
+  manager.options.onPage = (id, page) => direct.attach(id, page);
   let queue = Promise.resolve();
   function mutate(action) {
     const next = queue.then(action);
@@ -87,9 +94,10 @@ export async function createApplication(options = {}) {
     response.setHeader('X-Content-Type-Options', 'nosniff');
     response.setHeader('Referrer-Policy', 'no-referrer');
     response.setHeader('X-Frame-Options', 'DENY');
-    response.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:; connect-src 'self'; frame-ancestors 'none'; form-action 'self'; base-uri 'none'; object-src 'none'");
+    response.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:; connect-src 'self'; media-src 'self' blob:; frame-ancestors 'none'; form-action 'self'; base-uri 'none'; object-src 'none'");
     try {
-      const pathname = new URL(request.url, 'http://localhost').pathname;
+      const url = new URL(request.url, 'http://localhost');
+      const pathname = url.pathname;
       const method = request.method;
       if (method === 'GET' && pathname === '/health') return send(response, 200, { ok: true });
       if (method === 'GET' && assets.has(pathname)) {
@@ -98,7 +106,29 @@ export async function createApplication(options = {}) {
         return send(response, 200, await readFile(path.join(root, 'public', file)), `${type}; charset=utf-8`);
       }
       if (method === 'GET' && /^\/tv\/[123]\/?$/.test(pathname)) {
+        const id = pathname.split('/')[2];
+        if (store.device(id).mode === 'direct' && url.searchParams.get('mode') !== 'stream') {
+          const port = await direct.start(id);
+          const location = new URL(`http://${request.headers.host}`);
+          location.port = String(port);
+          location.pathname = '/__queue/view';
+          response.writeHead(302, { Location: location.href });
+          return response.end();
+        }
         return send(response, 200, await readFile(path.join(root, 'public', 'receiver.html')), 'text/html; charset=utf-8');
+      }
+      if (method === 'GET' && pathname === '/internal/video') {
+        requireLocal(request);
+        return send(response, 200, '<!doctype html><html><head><title>Video encoder</title></head><body></body></html>', 'text/html; charset=utf-8');
+      }
+      const videoRoute = pathname.match(/^\/api\/tv\/([123])\/video\/(offer|close)$/);
+      if (method === 'POST' && videoRoute) {
+        if (request.headers.origin !== `http://${request.headers.host}`) throw new InputError('Invalid request origin.', 403);
+        const body = await jsonBody(request);
+        const [, id, action] = videoRoute;
+        if (action === 'offer') return send(response, 200, await video.offer(id, body));
+        video.release(id, body.session);
+        return send(response, 200, { ok: true });
       }
       const tvRoute = pathname.match(/^\/api\/tv\/([123])\/(status|frame\.jpg)$/);
       if (method === 'GET' && tvRoute) {
@@ -107,7 +137,7 @@ export async function createApplication(options = {}) {
           const receiver = receivers.get(id);
           receiver.lastSeen = Date.now();
           const state = manager.snapshot(id);
-          return send(response, 200, { name: store.device(id).name, state: state.state, available: state.frameAvailable, revision: receiver.revision, interval: Math.round(1000 / store.value.fps) });
+          return send(response, 200, { mode: store.device(id).mode, name: store.device(id).name, state: state.state, available: state.frameAvailable, revision: receiver.revision, video: url.searchParams.has('video') ? video.touch(id, url.searchParams.get('video')) : true, interval: Math.round(1000 / store.value.fps) });
         }
         const frame = manager.frame(id);
         return frame ? send(response, 200, frame, 'image/jpeg') : send(response, 503, { error: 'Display is not available.' });
@@ -149,7 +179,7 @@ export async function createApplication(options = {}) {
           return send(response, 200, {
             config: store.value, browser: { running: Boolean(manager.context), error: manager.lastError }, addresses,
             stats: { uptimeSeconds: Math.floor(process.uptime()), serverMemoryMB: Math.round(process.memoryUsage().rss / 1024 / 1024) },
-            devices: store.value.devices.map(device => ({ id: device.id, ...manager.snapshot(device.id), ...receivers.get(device.id), connected: Date.now() - (receivers.get(device.id).lastSeen || 0) < 12000 })),
+            devices: store.value.devices.map(device => ({ id: device.id, ...manager.snapshot(device.id), direct: direct.snapshot(device.id), ...receivers.get(device.id), connected: Date.now() - (receivers.get(device.id).lastSeen || 0) < 12000 })),
           });
         }
         const preview = pathname.match(/^\/api\/admin\/devices\/([123])\/preview\.jpg$/);
@@ -176,9 +206,13 @@ export async function createApplication(options = {}) {
               const current = store.device(id);
               const next = validateDevice(body, id, current.enabled);
               if (current.enabled && !next.url) throw new InputError('Stop the display before clearing its URL.');
-              await manager.stop(id);
+              if (next.mode === 'direct') await direct.start(id);
+              const sourceChanged = ['url', 'readySelector', 'resolution', 'refreshSeconds'].some(key => current[key] !== next[key]);
+              if (sourceChanged) await manager.stop(id);
               await store.updateDevice(id, next);
-              if (current.enabled) await manager.start(id);
+              if (sourceChanged && current.enabled) await manager.start(id);
+              if (next.mode === 'direct') video.invalidate(id);
+              else direct.abort(id);
             } else if (action === 'start') {
               if (!store.device(id).url) throw new InputError('Save a display URL first.');
               await store.updateDevice(id, { enabled: true });
@@ -206,15 +240,20 @@ export async function createApplication(options = {}) {
   server.requestTimeout = 45000;
   server.headersTimeout = 10000;
   return {
-    server, store, manager,
+    server, store, manager, video, direct,
     async listen(port = 8443, host = '0.0.0.0') {
       await new Promise((resolve, reject) => { server.once('error', reject); server.listen(port, host, resolve); });
+      direct.adminPort = server.address().port;
+      direct.basePort = port === 0 ? 0 : server.address().port;
+      direct.host = host;
       return server.address();
     },
     async close() {
       server.closeIdleConnections();
       const closed = new Promise(resolve => server.close(resolve));
       await queue;
+      await direct.close();
+      await video.close();
       await manager.close();
       server.closeAllConnections();
       await closed;

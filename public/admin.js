@@ -64,7 +64,7 @@ function populate() {
   $('#quality').value = state.config.quality;
   for (const device of state.config.devices) {
     const form = $('.device-form', cards.get(device.id));
-    for (const key of ['name', 'url', 'readySelector', 'resolution', 'refreshSeconds']) form.elements[key].value = device[key];
+    for (const key of ['name', 'url', 'mode', 'readySelector', 'resolution', 'refreshSeconds']) form.elements[key].value = device[key];
   }
 }
 
@@ -113,9 +113,10 @@ function render() {
     $('.display-state', card).className = `badge display-state ${runtime.state === 'streaming' ? 'live' : runtime.state === 'awaiting-approval' ? 'review' : runtime.state === 'error' ? 'error' : ''}`;
     $('.receiver-text', card).textContent = runtime.connected ? 'TV receiver connected' : 'Waiting for TV';
     $('.status-dot', card).className = `status-dot${runtime.connected ? ' connected' : ''}`;
-    $('.resolution-label', card).textContent = device.resolution;
+    $('.resolution-label', card).textContent = device.mode === 'direct' ? 'PC gateway' : device.resolution;
+    $('.direct-message', card).textContent = device.mode === 'direct' && runtime.direct ? (runtime.direct.error || (runtime.direct.blocked.length ? 'Missing resources: ' + runtime.direct.blocked.join(', ') : 'PC gateway · ' + runtime.direct.gatewayResources + ' assets · ' + runtime.direct.activeTransfers + ' active transfers')) : '';
     $('.display-message', card).textContent = runtime.message || (runtime.state === 'streaming'
-      ? (runtime.verification === 'selector' ? 'Protected-page check passed. Streaming to this TV.' : 'Page approved by operator. Streaming to this TV.')
+      ? (runtime.verification === 'selector' ? 'Protected-page check passed. Ready for this TV.' : 'Page approved by operator. Ready for this TV.')
       : 'Save the queue URL, then start this display.');
     $('.approve-button', card).hidden = runtime.state !== 'awaiting-approval' || Boolean(device.readySelector);
     $('[data-action="start"]', card).disabled = busy || !device.url || ['starting', 'streaming', 'awaiting-approval'].includes(runtime.state);

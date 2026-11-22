@@ -7,12 +7,26 @@
   var offline = document.getElementById('offline');
   var heading = document.getElementById('status-heading');
   var message = document.getElementById('status-message');
+  var videoElement = document.getElementById('video');
+  var modeButton = document.getElementById('stream-mode');
+  var streamStatus = document.getElementById('stream-status');
+  var video = new window.QueueVideo(id, videoElement, function () {
+    display.style.display = 'none';
+    videoElement.style.display = 'block';
+    offline.style.display = 'none';
+    streamStatus.textContent = 'Live video';
+  }, function () { streamStatus.textContent = 'Compatibility mode'; });
+  modeButton.hidden = !video.supported;
+  function modeLabel() { modeButton.textContent = video.enabled() ? 'Use compatibility mode' : 'Try video'; }
+  modeButton.onclick = function () { video.toggle(); modeLabel(); };
+  modeLabel();
   var revision = null;
   var failures = 0;
   var wakeLock = null;
   document.getElementById('receiver-id').textContent = 'TV ' + id + ' · Automatically reconnects';
 
   function unavailable(title, detail) {
+    video.reset();
     display.style.display = 'none';
     display.removeAttribute('src');
     offline.style.display = 'table';
@@ -37,7 +51,8 @@
       next.onerror = null;
       if (ok) {
         display.src = next.src;
-        display.style.display = 'block';
+        display.style.display = video.live() ? 'none' : 'block';
+        if (!video.live()) streamStatus.textContent = video.pending() ? 'Connecting video · compatibility mode' : 'Compatibility mode';
         offline.style.display = 'none';
         failures = 0;
         schedule(interval);
@@ -50,7 +65,7 @@
   function poll() {
     var request = new XMLHttpRequest();
     var done = false;
-    request.open('GET', '/api/tv/' + id + '/status?t=' + Date.now(), true);
+    request.open('GET', '/api/tv/' + id + '/status?t=' + Date.now() + (video.session() ? '&video=' + encodeURIComponent(video.session()) : ''), true);
     request.timeout = 5000;
     function fail() { if (!done) { done = true; retry(); } }
     request.onerror = fail;
@@ -63,9 +78,16 @@
       try { state = JSON.parse(request.responseText); } catch (error) { return retry(); }
       if (revision !== null && revision !== state.revision) { window.location.reload(); return; }
       revision = state.revision;
+      if (state.mode === 'direct' && !/[?&]mode=stream(?:&|$)/.test(location.search)) { window.location.replace('/tv/' + id); return; }
       failures = 0;
       document.getElementById('tv-name').textContent = state.name;
-      if (state.available) frame(state.interval || 1000);
+      if (state.available) {
+        if (video.session() && !state.video) video.reset();
+        video.start();
+        video.check();
+        if (video.live()) schedule(1000);
+        else frame(state.interval || 1000);
+      }
       else {
         var title = state.state === 'stopped' ? 'Display is paused' : state.state === 'awaiting-approval' ? 'Your queue will appear shortly' : 'Preparing your display';
         unavailable(title, 'The operator can check this display on the PC. This screen will update automatically.');
@@ -97,6 +119,7 @@
   document.addEventListener('webkitfullscreenchange', fullscreenChanged);
   document.addEventListener('visibilitychange', requestWakeLock);
   window.setTimeout(function () { document.body.className = 'immersive'; }, 12000);
+  window.addEventListener('pagehide', function () { video.reset(); });
   requestWakeLock();
   poll();
 }());
